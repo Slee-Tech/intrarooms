@@ -1,0 +1,24 @@
+
+FROM: testing2 TO: ALL
+hello
+
+FROM: testing2 TO: ALL
+hello
+
+FROM: testing TO: ALL
+hi
+
+FROM: testing TO: ALL
+hi
+
+FROM: testing2 TO: ALL
+goodbye
+
+FROM: testing2 TO: ALL
+goodbye
+
+FROM: testing TO: ALL
+bye
+
+FROM: testing TO: ALL
+bye

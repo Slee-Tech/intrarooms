@@ -51,9 +51,11 @@ class ChatClient:
                     clear_console()
                     self.add_recieved_message(response.decode())
                     self.print_messages()
-                    # print(response.decode())
+
+                    self.lock.acquire() # prevent multiple clients from writing to log file
                     with open("chatlog.txt", 'a', encoding='utf-8') as f:
                         f.write(response.decode())
+                    self.lock.release()
         return
 
           # maybe add to list of recieved messages?
@@ -104,7 +106,7 @@ class ChatClient:
 
     def send_message(self, message):
         # extract name, recipient/message here
-        self.client_socket = self.create_client_connection()
+        # self.client_socket = self.create_client_connection()
         self.client_socket.send(f"NAME: {self.name}\n MESSAGE: {message}\n".encode())
     
     def send_password(self, password):
@@ -114,14 +116,16 @@ class ChatClient:
     
     def send_name(self, name):
         # try re-establishing the connection
-        client_socket = self.create_client_connection()
-        client_socket.send(f"JOIN: {name}".encode())
-        client_socket.close()
+        # client_socket = self.create_client_connection()
+        # client_socket.send(f"JOIN: {name}".encode())
+        self.client_socket.send(f"JOIN: {name}".encode())
+        # client_socket.close()
     
     def send_exit(self):
-        client_socket = self.create_client_connection()
-        client_socket.send(f"EXIT: {self.name}".encode())
-        client_socket.close()
+        # client_socket = self.create_client_connection()
+        # client_socket.send(f"EXIT: {self.name}".encode())
+        self.client_socket.send(f"EXIT: {self.name}".encode())
+        self.client_socket.close()
     
     def join_room_with_password(self):
         print("Please enter password to join the chatroom (or type EXIT to leave):")

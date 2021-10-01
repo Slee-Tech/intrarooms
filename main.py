@@ -1,14 +1,6 @@
 from socket import *
-import os, sys # In order to terminate the program
+import os, sys
 import threading
-
-# could be used in getting input/recieving messages in a thread
-# may not be needed
-def clear_console():
-    command = 'clear'
-    if os.name in ('nt', 'dos'):  # If Machine is running on Windows, use cls
-        command = 'cls'
-    os.system(command)
 
 class ChatRoom:
     def __init__(self):
@@ -44,71 +36,12 @@ class ChatRoom:
         if len(self.messages > 0):
             return self.messages[-1]
 
-class ChatClient:
-    def __init__(self):
-        self.host_ip = '127.0.0.1'
-        self.host_port = 1600
-        self.client_socket = self.create_client_connection()
-        self.joined_room = False
-        self.name = "New Chatter" # init when join successfully
-        self.EXIT = False
-
-    def run_client(self):
-        # prompt until entered password or exit
-        while not self.joined_room or self.EXIT:
-            self.join_room_with_password()
-        
-        if self.joined_room and not self.EXIT:
-            # promt/display messages
-            while not self.EXIT: # probably don't need this loop actually?
-                return
-                # probably want a thread for recieving input and recv messages?
-                input_thread = threading.Thread(target=self.recieve_input)
-                get_messages_thread = threading.Thread(target=self.get_messages)
-                input_thread.start()
-                get_messages_thread.start()
-                # don't believe join() is need on these?
-        
-        self.client_socket.close()
-    
-    def get_messages(self):
-        response = client_socket.recv(4096)
-
-        if(response):
-            while len(response) > 0:
-                print(response.decode())
-                response = client_socket.recv(4096)
-
-    def recieve_input(self):
-        new_message = input("Enter a message: ")
-        self.send_message(new_message)
-    
-    def create_client_connection(self):
-        client_socket = socket(AF_INET, SOCK_STREAM)
-        client_socket.connect((self.host_ip, int(self.host_port)))
-        return client_socket
-
-    def send_message(self, message):
-        # extract name, recipient/message here
-        self.client_socket.send(f"Name: {self.name}\n Message: {message}\n".encode())
-    
-    def send_password(self, password):
-        self.client_socket.send(f"PASSWORD: {password}".encode())
-    
-    def send_name(self, name):
-        self.client_socket.send(f"JOIN: {name}".encode())
-    
-    def join_room_with_password(self):
-        print("Please enter password to join the chatroom (or type EXIT to leave) :\n")
-        entered_password = input()
-        message = self.send_message(entered_password)
-        if message == "EXIT":
-            self.EXIT = True
-            return
-        elif message: # True check on server if password was correct in chatroom
-            self.joined_room = True
-            print("Please enter your name:\n")
-            self.name = input()
+#used in getting input/recieving messages in a thread
+def clear_console():
+    command = 'clear'
+    if os.name in ('nt', 'dos'):  # If machine is running on Windows, use cls
+        command = 'cls'
+    os.system(command)
 
 class MessageParser:
     EXIT = "EXIT:"
@@ -164,6 +97,8 @@ class ChatServer:
         self.PASSWORD_FAILURE = "FAILURE"
         self.established_connections = []
         self.connection_count = 0
+        self.exited_connections = []
+        self.lock = threading.Lock()
 
     def create_server_socket(self):
         # prepare a server socket
@@ -173,14 +108,10 @@ class ChatServer:
         server_socket.listen(self.max_requests) 
         return server_socket
 
-    def handle_request(self, message, connection_socket):
-        # maybe extract to function
-        # message_body = message.split()[1][1:]
-        # print(f"message is: {message}")
-        # print(message_body)
-        # this is entire connection for each socket client
-        while True:
-            message = connection_socket.recv(4096).decode()
+    def handle_request(self, message, connection_socket, client_id):
+        # this is entire connection for each client socket
+        # handle intial request then continue to listen
+        print(f"client id is {client_id}")
 
         message_type = self.message_parser.get_message_type(message)
         print(message_type["message_type"])
@@ -189,13 +120,34 @@ class ChatServer:
         elif message_type["message_type"] == self.message_parser.JOIN:
             self.handle_join_request(message_type["payload"], connection_socket)
         elif message_type["message_type"] == self.message_parser.MESSAGE:
-            self.handle_message_request(message_type["payload"], connection_socket)
+            self.handle_message_request(message_type["payload"], connection_socket, client_id)
         elif message_type["message_type"] == self.message_parser.EXIT:
-            # self.handle_password_request(message_type["payload"], connection_socket)
-            connection_socket.close()
+            self.handle_exit_request(message_type["payload"], connection_socket, client_id)
+
+        while True:
+            try:
+                if client_id in self.exited_connections:
+                    return
+                message = connection_socket.recv(4096).decode()
+                if len(message) > 0:
+                    message_type = self.message_parser.get_message_type(message)
+
+                    if message_type["message_type"] == self.message_parser.PASSWORD:
+                        self.handle_password_request(message_type["payload"], connection_socket)
+                    elif message_type["message_type"] == self.message_parser.JOIN:
+                        self.handle_join_request(message_type["payload"], connection_socket)
+                    elif message_type["message_type"] == self.message_parser.MESSAGE:
+                        self.handle_message_request(message_type["payload"], connection_socket, client_id)
+                    elif message_type["message_type"] == self.message_parser.EXIT:
+                        self.handle_exit_request(message_type["payload"], connection_socket, client_id)
+                    
+            except KeyboardInterrupt:
+                # sys.exit()
+                print("\nClosing server...")
+                self.close_server()
         #self.close_server()
 
-         # switch on message_body/type NAME/PASSWORD/MESSAGE
+        # switch on message_body/type NAME/PASSWORD/MESSAGE
 
         ### this was from browser test
         # connection_socket.send("HTTP/1.1 200 OK\r\n".encode())
@@ -204,6 +156,13 @@ class ChatServer:
         # connection_socket.send(f"Hello {message_body}".encode())
         # connection_socket.send("\r\n".encode())
         ###
+    
+    def handle_exit_request(self, payload, connection_socket, client_id):
+        # self.chat_room.add_visitor(payload)
+        self.exited_connections.append(client_id)
+        self.established_connections[client_id].close()
+
+        # print(self.chat_room.visitors)
 
     def handle_password_request(self, payload, connection_socket):
         if self.chat_room.validate_password(payload):
@@ -215,11 +174,14 @@ class ChatServer:
             self.chat_room.add_visitor(payload)
             print(self.chat_room.visitors)
     
-    def handle_message_request(self, payload, connection_socket):
+    def handle_message_request(self, payload, connection_socket, client_id):
         sender = payload["sender"]
         message = payload["message"]
         added_message = self.chat_room.add_message(sender, message)
-        connection_socket.send(added_message.encode())
+        for i, client_socket in enumerate(self.established_connections):
+            if i not in self.exited_connections:
+                client_socket.send(added_message.encode())
+        # connection_socket.send(added_message.encode())
         print(added_message)
 
     def serve(self):
@@ -234,9 +196,9 @@ class ChatServer:
 
                 if len(message) > 0:
                     self.established_connections.append(connection_socket)
-                    self.connection_count += 1 # use as an index when closing/updating 
-                    new_request = threading.Thread(target=self.handle_request, args=(message, connectionSocket))
+                    new_request = threading.Thread(target=self.handle_request, args=(message, connection_socket, self.connection_count))
                     new_request.start()
+                    self.connection_count += 1 # use as an index when closing/updating 
                     # self.handle_request(message, connection_socket)
                 #    message_recieved = True
             except KeyboardInterrupt:
@@ -246,13 +208,17 @@ class ChatServer:
 
     def close_server(self):
         self.server_socket.close()
+        for client in self.established_connections:
+            client.close()
+
         sys.exit()
 
 if __name__=="__main__":
     server = ChatServer()
     server.serve()
+
     # client = ChatClient()
     # client.run_client()
     # parser = MessageParser()
-    # test = parser.get_message_type("NAME: johnthony\n MESSAGE: you are a fucker\n")
+    # test = parser.get_message_type("NAME: john\n MESSAGE: hello\n")
     # print(test)
